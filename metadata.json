@@ -1,0 +1,6 @@
+{
+  "name": "GitHub Streamline",
+  "description": "A streamlined companion app to explore, search, and analyze GitHub repositories, events, and issues with local bookmarking and Gemini-powered summaries.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
