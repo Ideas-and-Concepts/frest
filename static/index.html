@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gemini Chat (frest)</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; font-family: system-ui, sans-serif; }
+    body { background: #0b0f19; display: flex; justify-content: center; align-items: center; height: 100vh; }
+    .chat-container { width: 100%; max-width: 700px; height: 90vh; background: #141a26; border-radius: 24px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.6); }
+    .header { padding: 20px 24px; background: #1e2636; border-bottom: 1px solid #2a3344; }
+    .header h1 { color: #e8edf5; font-size: 20px; font-weight: 600; letter-spacing: -0.3px; }
+    .header span { color: #8b9bb5; font-size: 14px; margin-left: 8px; }
+    .messages { flex: 1; overflow-y: auto; padding: 24px 20px; display: flex; flex-direction: column; gap: 16px; }
+    .msg { max-width: 80%; padding: 12px 18px; border-radius: 18px; line-height: 1.5; font-size: 15px; word-wrap: break-word; }
+    .msg.user { align-self: flex-end; background: #2b6bff; color: white; border-bottom-right-radius: 4px; }
+    .msg.assistant { align-self: flex-start; background: #212b3e; color: #e0e8f0; border-bottom-left-radius: 4px; }
+    .msg .loading { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #8b9bb5; animation: pulse 1.2s infinite; margin-right: 4px; }
+    @keyframes pulse { 0%, 100% { opacity: 0.2; } 50% { opacity: 1; } }
+    .input-area { padding: 16px 20px; background: #1e2636; border-top: 1px solid #2a3344; display: flex; gap: 12px; }
+    .input-area input { flex: 1; padding: 12px 18px; border: none; border-radius: 40px; background: #0f151f; color: #e8edf5; font-size: 15px; outline: none; }
+    .input-area input::placeholder { color: #5a6a82; }
+    .input-area button { padding: 12px 28px; border: none; border-radius: 40px; background: #2b6bff; color: white; font-weight: 600; font-size: 15px; cursor: pointer; transition: 0.2s; }
+    .input-area button:hover { background: #3d7bff; }
+    .input-area button:disabled { opacity: 0.4; cursor: not-allowed; }
+    .error { background: #2d1a1a !important; color: #ff7a7a !important; align-self: center; }
+  </style>
+</head>
+<body>
+  <div class="chat-container">
+    <div class="header"><h1>🤖 frest <span>· Gemini</span></h1></div>
+    <div class="messages" id="messages"></div>
+    <div class="input-area">
+      <input type="text" id="input" placeholder="Ask anything..." />
+      <button id="sendBtn">Send</button>
+    </div>
+  </div>
+
+  <script>
+    const messagesEl = document.getElementById('messages');
+    const input = document.getElementById('input');
+    const sendBtn = document.getElementById('sendBtn');
+    let chatHistory = [];
+
+    function addMessage(role, content, isError = false) {
+      const div = document.createElement('div');
+      div.className = `msg ${role}`;
+      if (isError) div.classList.add('error');
+      div.textContent = content;
+      messagesEl.appendChild(div);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    function showTyping() {
+      const div = document.createElement('div');
+      div.className = 'msg assistant';
+      div.id = 'typing';
+      div.innerHTML = '<span class="loading"></span><span class="loading"></span><span class="loading"></span>';
+      messagesEl.appendChild(div);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    function removeTyping() {
+      const el = document.getElementById('typing');
+      if (el) el.remove();
+    }
+
+    async function sendMessage() {
+      const text = input.value.trim();
+      if (!text) return;
+      input.value = '';
+      sendBtn.disabled = true;
+
+      chatHistory.push({ role: 'user', content: text });
+      addMessage('user', text);
+
+      showTyping();
+
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messages: chatHistory }),
+        });
+        const data = await res.json();
+        removeTyping();
+
+        if (!res.ok) {
+          addMessage('assistant', `❌ Error: ${data.detail || 'Unknown error'}`, true);
+          return;
+        }
+        chatHistory.push({ role: 'assistant', content: data.reply });
+        addMessage('assistant', data.reply);
+      } catch (err) {
+        removeTyping();
+        addMessage('assistant', `❌ Network error: ${err.message}`, true);
+      } finally {
+        sendBtn.disabled = false;
+        input.focus();
+      }
+    }
+
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMessage(); });
+    sendBtn.addEventListener('click', sendMessage);
+  </script>
+</body>
+</html>
