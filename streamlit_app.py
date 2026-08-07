@@ -1,3 +1,16 @@
+import streamlit as st
+import os
+
+# --- DEBUG: print all secrets keys and first few chars ---
+try:
+    st.write("🔍 Secrets keys found:", list(st.secrets.keys()))
+    for k in st.secrets.keys():
+        val = st.secrets[k]
+        st.write(f"   {k}: {val[:10]}..." if val else "   empty")
+except Exception as e:
+    st.write("❌ Error reading secrets:", e)
+
+
 """
 streamlit_app.py – frest: AEC & MEP Expert for East Africa
 Powered by Gemini, ChatGPT (OpenAI), and DeepSeek.
