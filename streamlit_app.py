@@ -1,13 +1,3 @@
-import streamlit as st
-import os
-
-# ---- DEBUG: show API keys status (masked) ----
-gemini_key = st.secrets.get("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY")
-deepseek_key = st.secrets.get("DEEPSEEK_API_KEY") or os.getenv("DEEPSEEK_API_KEY")
-st.write("Gemini key present:", bool(gemini_key), "starts with:", gemini_key[:7] if gemini_key else "None")
-st.write("DeepSeek key present:", bool(deepseek_key), "starts with:", deepseek_key[:7] if deepseek_key else "None")
-
-
 """
 streamlit_app.py – frest: AEC & MEP Expert for East Africa
 Powered by Gemini, ChatGPT (OpenAI), and DeepSeek.
@@ -32,18 +22,21 @@ SYSTEM_PROMPT = (
     "and professional manner."
 )
 
-# ---------- Model selection and API keys ----------
-def get_api_keys():
-    """Read API keys from Streamlit secrets or environment variables."""
-    return {
-        "gemini": st.secrets.get("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY"),
-        "openai": st.secrets.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY"),
-        "deepseek": st.secrets.get("DEEPSEEK_API_KEY") or os.getenv("DEEPSEEK_API_KEY"),
-    }
+# ---------- API key helpers ----------
+def get_key(key_name: str) -> str:
+    """Return API key from secrets or environment, or empty string."""
+    try:
+        return st.secrets.get(key_name, os.getenv(key_name, ""))
+    except:
+        return os.getenv(key_name, "")
 
-API_KEYS = get_api_keys()
+API_KEYS = {
+    "gemini": get_key("GEMINI_API_KEY"),
+    "openai": get_key("OPENAI_API_KEY"),
+    "deepseek": get_key("DEEPSEEK_API_KEY"),
+}
 
-# ---------- Sidebar: Model selection & status ----------
+# ---------- Sidebar: status and settings ----------
 with st.sidebar:
     st.header("⚙️ frest Settings")
 
@@ -54,8 +47,7 @@ with st.sidebar:
         help="Select which AI engine to power frest."
     )
 
-    # Show API key status
-    st.subheader("🔑 API Keys")
+    st.subheader("🔑 API Key Status")
     for name, key in API_KEYS.items():
         status = "✅" if key else "❌"
         st.write(f"{status} {name.capitalize()}")
@@ -64,42 +56,38 @@ with st.sidebar:
         st.session_state.messages = []
         st.rerun()
 
-    st.caption("Your API keys are stored securely in secrets or environment variables.")
+    st.caption("Keys are read from .streamlit/secrets.toml or environment variables.")
 
-# ---------- Model initialization ----------
-def get_gemini_response(messages: List[Dict[str, str]]) -> str:
+# ---------- Model functions ----------
+def call_gemini(messages: List[Dict[str, str]]) -> str:
     import google.generativeai as genai
-
     genai.configure(api_key=API_KEYS["gemini"])
     model = genai.GenerativeModel(
         model_name="gemini-1.5-pro",
         system_instruction=SYSTEM_PROMPT,
     )
-    # Convert messages to Gemini format
+    # Build history and last user message
     history = []
-    for msg in messages[:-1]:  # all but the last user message
+    for msg in messages[:-1]:
         role = "user" if msg["role"] == "user" else "model"
         history.append({"role": role, "parts": [msg["content"]]})
     chat = model.start_chat(history=history)
     response = chat.send_message(messages[-1]["content"])
     return response.text
 
-def get_openai_response(messages: List[Dict[str, str]]) -> str:
+def call_openai(messages: List[Dict[str, str]]) -> str:
     from openai import OpenAI
-
     client = OpenAI(api_key=API_KEYS["openai"])
-    # Build messages list with system prompt
     full_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + messages
     response = client.chat.completions.create(
-        model="gpt-4o-mini",  # or "gpt-4" if you have access
+        model="gpt-4o-mini",  # or "gpt-4"
         messages=full_messages,
         temperature=0.7,
     )
     return response.choices[0].message.content
 
-def get_deepseek_response(messages: List[Dict[str, str]]) -> str:
+def call_deepseek(messages: List[Dict[str, str]]) -> str:
     from openai import OpenAI
-
     client = OpenAI(
         api_key=API_KEYS["deepseek"],
         base_url="https://api.deepseek.com/v1",
@@ -130,38 +118,27 @@ if prompt := st.chat_input("Ask about construction, MEP, materials, or East Afri
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # Get response based on selected model
+    # Determine which model to call
+    model_map = {
+        "Gemini (Google)": ("gemini", call_gemini),
+        "ChatGPT (OpenAI)": ("openai", call_openai),
+        "DeepSeek": ("deepseek", call_deepseek),
+    }
+    key_name, call_func = model_map[model_choice]
+
+    # Check if API key is available
+    if not API_KEYS[key_name]:
+        with st.chat_message("assistant"):
+            st.error(f"❌ {key_name.capitalize()} API key is not set. Please add it to your secrets.")
+        st.stop()
+
+    # Get response
     with st.chat_message("assistant"):
         with st.spinner(f"Consulting {model_choice}..."):
             try:
-                # Map choice to API key and function
-                if model_choice == "Gemini (Google)":
-                    if not API_KEYS["gemini"]:
-                        raise ValueError("Gemini API key not set.")
-                    reply = get_gemini_response(st.session_state.messages)
-                elif model_choice == "ChatGPT (OpenAI)":
-                    if not API_KEYS["openai"]:
-                        raise ValueError("OpenAI API key not set.")
-                    reply = get_openai_response(st.session_state.messages)
-                elif model_choice == "DeepSeek":
-                    if not API_KEYS["deepseek"]:
-                        raise ValueError("DeepSeek API key not set.")
-                    reply = get_deepseek_response(st.session_state.messages)
-                else:
-                    reply = "Unknown model selected."
-
+                reply = call_func(st.session_state.messages)
                 st.markdown(reply)
                 st.session_state.messages.append({"role": "assistant", "content": reply})
-
             except Exception as e:
-                st.error(f"❌ Error: {e}")
-                st.info("Make sure your API key is correct and you have credits.")
-
-# ---------- Footer ----------
-st.sidebar.markdown("---")
-st.sidebar.info(
-    "💡 **Tips**\n"
-    "- Switch models anytime – frest adapts.\n"
-    "- The system prompt ensures expert responses.\n"
-    "- Your chat history stays in the session."
-)
+                st.error(f"⚠️ Error: {e}")
+                st.info("Check your API key and internet connection.")
