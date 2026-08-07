@@ -1,16 +1,3 @@
-import streamlit as st
-import os
-
-# --- DEBUG: print all secrets keys and first few chars ---
-try:
-    st.write("🔍 Secrets keys found:", list(st.secrets.keys()))
-    for k in st.secrets.keys():
-        val = st.secrets[k]
-        st.write(f"   {k}: {val[:10]}..." if val else "   empty")
-except Exception as e:
-    st.write("❌ Error reading secrets:", e)
-
-
 """
 streamlit_app.py – frest: AEC & MEP Expert for East Africa
 Powered by Gemini, ChatGPT (OpenAI), and DeepSeek.
@@ -18,10 +5,40 @@ Powered by Gemini, ChatGPT (OpenAI), and DeepSeek.
 
 import streamlit as st
 import os
+import sys
 from typing import List, Dict
 
 # ---------- Page config ----------
 st.set_page_config(page_title="frest – AEC Expert", page_icon="🏗️", layout="wide")
+
+# ========== DEBUG: verify secrets file is being read ==========
+# This block will show helpful info only if secrets are missing.
+# Remove after you see it's working.
+
+if not st.secrets:
+    st.warning("⚠️ No secrets found. Make sure your .streamlit/secrets.toml is in the right place.")
+    cwd = os.getcwd()
+    st.write(f"📂 Current working directory: `{cwd}`")
+    streamlit_folder = os.path.join(cwd, ".streamlit")
+    if os.path.exists(streamlit_folder):
+        st.write("✅ `.streamlit/` folder exists.")
+        secrets_file = os.path.join(streamlit_folder, "secrets.toml")
+        if os.path.exists(secrets_file):
+            st.write("✅ `secrets.toml` file exists.")
+            with open(secrets_file, "r") as f:
+                content = f.read()
+                st.write("📄 File content (masked):")
+                # Show only first line to avoid exposing full keys
+                lines = content.splitlines()
+                for line in lines:
+                    if "=" in line:
+                        key = line.split("=")[0].strip()
+                        st.write(f"   - {key} = ********")
+        else:
+            st.error("❌ `secrets.toml` file NOT found in `.streamlit/`.")
+    else:
+        st.error("❌ `.streamlit/` folder NOT found in the current directory.")
+    st.stop()  # Stop execution so user can fix the path
 
 # ---------- System prompt (expert context) ----------
 SYSTEM_PROMPT = (
@@ -35,19 +52,11 @@ SYSTEM_PROMPT = (
     "and professional manner."
 )
 
-# ---------- API key helpers ----------
-def get_key(key_name: str) -> str:
-    """Return API key from secrets or environment, or empty string."""
-    try:
-        return st.secrets.get(key_name, os.getenv(key_name, ""))
-    except:
-        return os.getenv(key_name, "")
-
-API_KEYS = {
-    "gemini": get_key("GEMINI_API_KEY"),
-    "openai": get_key("OPENAI_API_KEY"),
-    "deepseek": get_key("DEEPSEEK_API_KEY"),
-}
+# ---------- API keys (read directly from st.secrets) ----------
+# We use .get() with empty string fallback, but the debug above ensures st.secrets is non-empty.
+GEMINI_KEY = st.secrets.get("GEMINI_API_KEY", "")
+OPENAI_KEY = st.secrets.get("OPENAI_API_KEY", "")
+DEEPSEEK_KEY = st.secrets.get("DEEPSEEK_API_KEY", "")
 
 # ---------- Sidebar: status and settings ----------
 with st.sidebar:
@@ -61,9 +70,9 @@ with st.sidebar:
     )
 
     st.subheader("🔑 API Key Status")
-    for name, key in API_KEYS.items():
-        status = "✅" if key else "❌"
-        st.write(f"{status} {name.capitalize()}")
+    st.write("✅" if GEMINI_KEY else "❌", " Gemini")
+    st.write("✅" if OPENAI_KEY else "❌", " OpenAI")
+    st.write("✅" if DEEPSEEK_KEY else "❌", " DeepSeek")
 
     if st.button("🧹 Clear Chat History"):
         st.session_state.messages = []
@@ -74,12 +83,11 @@ with st.sidebar:
 # ---------- Model functions ----------
 def call_gemini(messages: List[Dict[str, str]]) -> str:
     import google.generativeai as genai
-    genai.configure(api_key=API_KEYS["gemini"])
+    genai.configure(api_key=GEMINI_KEY)
     model = genai.GenerativeModel(
         model_name="gemini-1.5-pro",
         system_instruction=SYSTEM_PROMPT,
     )
-    # Build history and last user message
     history = []
     for msg in messages[:-1]:
         role = "user" if msg["role"] == "user" else "model"
@@ -90,10 +98,10 @@ def call_gemini(messages: List[Dict[str, str]]) -> str:
 
 def call_openai(messages: List[Dict[str, str]]) -> str:
     from openai import OpenAI
-    client = OpenAI(api_key=API_KEYS["openai"])
+    client = OpenAI(api_key=OPENAI_KEY)
     full_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + messages
     response = client.chat.completions.create(
-        model="gpt-4o-mini",  # or "gpt-4"
+        model="gpt-4o-mini",
         messages=full_messages,
         temperature=0.7,
     )
@@ -102,7 +110,7 @@ def call_openai(messages: List[Dict[str, str]]) -> str:
 def call_deepseek(messages: List[Dict[str, str]]) -> str:
     from openai import OpenAI
     client = OpenAI(
-        api_key=API_KEYS["deepseek"],
+        api_key=DEEPSEEK_KEY,
         base_url="https://api.deepseek.com/v1",
     )
     full_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + messages
@@ -131,18 +139,17 @@ if prompt := st.chat_input("Ask about construction, MEP, materials, or East Afri
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # Determine which model to call
+    # Map model choice to key and function
     model_map = {
-        "Gemini (Google)": ("gemini", call_gemini),
-        "ChatGPT (OpenAI)": ("openai", call_openai),
-        "DeepSeek": ("deepseek", call_deepseek),
+        "Gemini (Google)": (GEMINI_KEY, call_gemini, "Gemini"),
+        "ChatGPT (OpenAI)": (OPENAI_KEY, call_openai, "OpenAI"),
+        "DeepSeek": (DEEPSEEK_KEY, call_deepseek, "DeepSeek"),
     }
-    key_name, call_func = model_map[model_choice]
+    api_key, call_func, model_name = model_map[model_choice]
 
-    # Check if API key is available
-    if not API_KEYS[key_name]:
+    if not api_key:
         with st.chat_message("assistant"):
-            st.error(f"❌ {key_name.capitalize()} API key is not set. Please add it to your secrets.")
+            st.error(f"❌ {model_name} API key is not set. Please add it to your secrets.")
         st.stop()
 
     # Get response
