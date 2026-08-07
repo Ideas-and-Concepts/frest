@@ -1,46 +1,80 @@
 """
 streamlit_app.py – frest: AEC & MEP Expert for East Africa
-Powered by Gemini, ChatGPT (OpenAI), and DeepSeek.
 """
 
 import streamlit as st
 import os
-import sys
 from typing import List, Dict
+
+# ---------- Load environment variables from .env (if present) ----------
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # dotenv not installed – that's fine
 
 # ---------- Page config ----------
 st.set_page_config(page_title="frest – AEC Expert", page_icon="🏗️", layout="wide")
 
-# ========== DEBUG: verify secrets file is being read ==========
-# This block will show helpful info only if secrets are missing.
-# Remove after you see it's working.
+# ---------- Helper to get keys ----------
+def get_key(name: str) -> str:
+    """Try st.secrets, then environment, then empty."""
+    try:
+        val = st.secrets.get(name, "")
+        if val:
+            return val
+    except:
+        pass
+    return os.getenv(name, "")
 
-if not st.secrets:
-    st.warning("⚠️ No secrets found. Make sure your .streamlit/secrets.toml is in the right place.")
+GEMINI_KEY = get_key("GEMINI_API_KEY")
+OPENAI_KEY = get_key("OPENAI_API_KEY")
+DEEPSEEK_KEY = get_key("DEEPSEEK_API_KEY")
+
+# ---------- If no keys, show detailed guidance ----------
+if not any([GEMINI_KEY, OPENAI_KEY, DEEPSEEK_KEY]):
+    st.error("🔑 No API keys found!")
+    st.markdown("""
+    **Please set your keys using one of these methods:**
+    
+    1. **`.streamlit/secrets.toml`** (local or cloud):
+       - Folder must be named `.streamlit` (with a dot)
+       - File must be named `secrets.toml`
+       - Content example:
+         ```toml
+         GEMINI_API_KEY = "AIzaSy..."
+         DEEPSEEK_API_KEY = "sk-..."
+         ```
+    
+    2. **Environment variables** (local):
+       ```bash
+       export GEMINI_API_KEY="AIzaSy..."
+       export DEEPSEEK_API_KEY="sk-..."
+       streamlit run streamlit_app.py
+       ```
+    
+    3. **`.env` file** (local) – install `python-dotenv`:
+       ```
+       GEMINI_API_KEY=AIzaSy...
+       DEEPSEEK_API_KEY=sk-...
+       ```
+    """)
+    # Show current directory and file check
     cwd = os.getcwd()
-    st.write(f"📂 Current working directory: `{cwd}`")
-    streamlit_folder = os.path.join(cwd, ".streamlit")
-    if os.path.exists(streamlit_folder):
+    st.write(f"📂 Current directory: `{cwd}`")
+    streamlit_dir = os.path.join(cwd, ".streamlit")
+    if os.path.exists(streamlit_dir):
         st.write("✅ `.streamlit/` folder exists.")
-        secrets_file = os.path.join(streamlit_folder, "secrets.toml")
+        secrets_file = os.path.join(streamlit_dir, "secrets.toml")
         if os.path.exists(secrets_file):
-            st.write("✅ `secrets.toml` file exists.")
-            with open(secrets_file, "r") as f:
-                content = f.read()
-                st.write("📄 File content (masked):")
-                # Show only first line to avoid exposing full keys
-                lines = content.splitlines()
-                for line in lines:
-                    if "=" in line:
-                        key = line.split("=")[0].strip()
-                        st.write(f"   - {key} = ********")
+            st.write("✅ `secrets.toml` exists.")
         else:
-            st.error("❌ `secrets.toml` file NOT found in `.streamlit/`.")
+            st.write("❌ `secrets.toml` missing inside `.streamlit/`.")
     else:
-        st.error("❌ `.streamlit/` folder NOT found in the current directory.")
-    st.stop()  # Stop execution so user can fix the path
+        st.write("❌ `.streamlit/` folder not found.")
+    st.stop()
 
-# ---------- System prompt (expert context) ----------
+# ---------- System prompt ----------
 SYSTEM_PROMPT = (
     "You are frest, an expert in Architecture, Engineering, and Construction (AEC), "
     "with deep specialization in Mechanical, Electrical, and Plumbing (MEP) systems. "
@@ -52,23 +86,14 @@ SYSTEM_PROMPT = (
     "and professional manner."
 )
 
-# ---------- API keys (read directly from st.secrets) ----------
-# We use .get() with empty string fallback, but the debug above ensures st.secrets is non-empty.
-GEMINI_KEY = st.secrets.get("GEMINI_API_KEY", "")
-OPENAI_KEY = st.secrets.get("OPENAI_API_KEY", "")
-DEEPSEEK_KEY = st.secrets.get("DEEPSEEK_API_KEY", "")
-
-# ---------- Sidebar: status and settings ----------
+# ---------- Sidebar ----------
 with st.sidebar:
     st.header("⚙️ frest Settings")
-
     model_choice = st.selectbox(
         "Choose AI model",
         ["Gemini (Google)", "ChatGPT (OpenAI)", "DeepSeek"],
         index=0,
-        help="Select which AI engine to power frest."
     )
-
     st.subheader("🔑 API Key Status")
     st.write("✅" if GEMINI_KEY else "❌", " Gemini")
     st.write("✅" if OPENAI_KEY else "❌", " OpenAI")
@@ -77,8 +102,6 @@ with st.sidebar:
     if st.button("🧹 Clear Chat History"):
         st.session_state.messages = []
         st.rerun()
-
-    st.caption("Keys are read from .streamlit/secrets.toml or environment variables.")
 
 # ---------- Model functions ----------
 def call_gemini(messages: List[Dict[str, str]]) -> str:
@@ -121,25 +144,21 @@ def call_deepseek(messages: List[Dict[str, str]]) -> str:
     )
     return response.choices[0].message.content
 
-# ---------- Chat logic ----------
+# ---------- Chat ----------
 if "messages" not in st.session_state:
     st.session_state.messages = [
         {"role": "assistant", "content": "🏗️ Hello! I'm frest, your AEC expert for East Africa. How can I assist you today?"}
     ]
 
-# Display chat history
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-# User input
 if prompt := st.chat_input("Ask about construction, MEP, materials, or East African projects..."):
-    # Add user message
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # Map model choice to key and function
     model_map = {
         "Gemini (Google)": (GEMINI_KEY, call_gemini, "Gemini"),
         "ChatGPT (OpenAI)": (OPENAI_KEY, call_openai, "OpenAI"),
@@ -149,10 +168,9 @@ if prompt := st.chat_input("Ask about construction, MEP, materials, or East Afri
 
     if not api_key:
         with st.chat_message("assistant"):
-            st.error(f"❌ {model_name} API key is not set. Please add it to your secrets.")
+            st.error(f"❌ {model_name} API key is not set.")
         st.stop()
 
-    # Get response
     with st.chat_message("assistant"):
         with st.spinner(f"Consulting {model_choice}..."):
             try:
