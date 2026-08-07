@@ -1,3 +1,13 @@
+import streamlit as st
+import os
+
+# ---- DEBUG: show API keys status (masked) ----
+gemini_key = st.secrets.get("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY")
+deepseek_key = st.secrets.get("DEEPSEEK_API_KEY") or os.getenv("DEEPSEEK_API_KEY")
+st.write("Gemini key present:", bool(gemini_key), "starts with:", gemini_key[:7] if gemini_key else "None")
+st.write("DeepSeek key present:", bool(deepseek_key), "starts with:", deepseek_key[:7] if deepseek_key else "None")
+
+
 """
 streamlit_app.py – frest: AEC & MEP Expert for East Africa
 Powered by Gemini, ChatGPT (OpenAI), and DeepSeek.
